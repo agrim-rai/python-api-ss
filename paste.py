@@ -6,6 +6,8 @@ import math
 import logging
 from collections import deque
 import re
+import sys
+
 
 
 def fetch_document_by_id(document_id):
@@ -271,7 +273,13 @@ def analyze_paste_suspicion(paste_data_json):
 
 
 if __name__ == "__main__":
-    document_id = "67e981737f85e96815202b38"  
+    
+    if len(sys.argv) < 2:
+        print(json.dumps({"error": "Missing object_id argument"}))
+        sys.exit(1)
+
+    document_id = sys.argv[1]  # Get object_id from command line argument
+
     doc_content = fetch_document_by_id(document_id)
     if doc_content:
         analysis_result = analyze_paste_suspicion(doc_content)
