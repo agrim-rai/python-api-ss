@@ -1,6 +1,3 @@
 fastapi
 uvicorn
 pymongo
-bson
-datetime
-numpy 
