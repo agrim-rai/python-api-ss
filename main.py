@@ -36,7 +36,7 @@ class ScriptRequest(BaseModel):
 
 @app.post("/execute")
 async def execute_code(request: ScriptRequest):
-    if request.script_name not in ["paste.py", "copymain.py", "keymain.py"]:
+    if request.script_name not in ["paste.py", "copymain.py", "keymain.py","cpp.py"]:
         return {"error": "Invalid script name"}
 
     try:
