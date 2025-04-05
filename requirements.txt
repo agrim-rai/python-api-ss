@@ -3,4 +3,3 @@ uvicorn
 pymongo
 radon
 pycodestyle
-bson
