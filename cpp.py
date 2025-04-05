@@ -520,8 +520,8 @@ if __name__ == "__main__":
 
         if analysis_result:
            
-            json_output = json.dumps(analysis_result, indent=4, default=str)
-            print(json_output)
+            # json_output = json.dumps(analysis_result, indent=4, default=str)
+            print(analysis_result)
         else:
             print("Analysis could not be performed on the document.")
 
