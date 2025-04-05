@@ -5,6 +5,8 @@ import sys
 import logging
 from datetime import datetime
 from urllib.parse import urlparse
+from pymongo import MongoClient  # Import MongoClient
+
 from bson import ObjectId # Make sure bson is installed (pip install pymongo)
 
 # --- Configuration ---
