@@ -289,7 +289,7 @@ def analyze_tab_switch(doc):
 
 # --- MongoDB Connection and Main Execution ---
 # WARNING: Avoid hardcoding credentials in production code. Use environment variables or a config file.
-client = MongoClient("mongodb+srv://admin:7vNJvFHGPVvbWBRD@syntaxsentry.rddho.mongodb.net/?retryWrites=true&w=majority&appName=syntaxsentry")
+MONGO_URI = "mongodb+srv://admin:7vNJvFHGPVvbWBRD@syntaxsentry.rddho.mongodb.net/?retryWrites=true&w=majority&appName=syntaxsentry"
 DATABASE_NAME = "test"
 COLLECTION_NAME = "activities"
 
