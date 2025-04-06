@@ -368,6 +368,8 @@ def fetch_document_by_id(document_id):
         return None, f"Database error: {e}"
 
 
+
+# Add/modify this section at the bottom of your tab.py script
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(json.dumps({"error": "Missing object_id argument"}, indent=2))
@@ -387,12 +389,23 @@ if __name__ == "__main__":
             print(json.dumps({"error": f"Document {document_id} is not a 'tab_switch' event"}, indent=2))
             sys.exit(1)
 
-        # Perform analysis and return the result
-        analysis_result = analyze_tab_switch(doc_content)
-        print(json.dumps(analysis_result, indent=2, default=str))
-        sys.exit(0)  # Exit with success code after printing result
+        try:
+            # Perform analysis and return the result
+            analysis_result = analyze_tab_switch(doc_content)
+            
+            # Ensure logging goes to stderr, not stdout
+            handlers = logging.getLogger().handlers
+            for handler in handlers:
+                if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
+                    handler.stream = sys.stderr
+            
+            # Print only the JSON result to stdout
+            print(json.dumps(analysis_result, indent=2, default=str))
+            sys.exit(0)  # Exit with success code
+        except Exception as e:
+            logging.error(f"Analysis error: {str(e)}")
+            print(json.dumps({"error": f"Analysis error: {str(e)}"}, indent=2))
+            sys.exit(1)
     else:
-        # Error message already printed by fetch_document_by_id in case of no doc found
-        # This case should theoretically be covered by the error check above
         print(json.dumps({"error": f"Failed to retrieve document {document_id}"}, indent=2))
-        sys.exit(1) # Should exit in fetch_document_by_id failure case already
+        sys.exit(1)
