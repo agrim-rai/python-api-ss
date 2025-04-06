@@ -162,10 +162,45 @@ def analyze_tab_switch(doc):
     username = doc.get("username", "N/A")
     problem_id = doc.get("problemId", "N/A")
     problem_title = doc.get("problemTitle", "N/A")
-    platform = doc.get("platform", "N/A").lower()
-    timestamp_ms = doc.get("timestamp", {}).get("$date", {}).get("$numberLong")
-    timestamp_iso = datetime.utcfromtimestamp(int(timestamp_ms) / 1000).isoformat() + "Z" if timestamp_ms else "N/A"
+    # platform = doc.get("platform", "N/A").lower()
+    # timestamp_ms = doc.get("timestamp", {}).get("$date", {}).get("$numberLong")
+    # timestamp_iso = datetime.utcfromtimestamp(int(timestamp_ms) / 1000).isoformat() + "Z" if timestamp_ms else "N/A"
 
+        # --- Corrected Lines ---
+    platform = doc.get("platform", "N/A").lower()
+    timestamp_val = doc.get("timestamp") # Get the value directly
+
+    timestamp_ms = None
+    timestamp_iso = "N/A" # Default value
+
+    if isinstance(timestamp_val, datetime):
+        try:
+            # Convert the datetime object to UTC timestamp in milliseconds
+            # .timestamp() gives seconds since epoch, potentially influenced by local timezone
+            # If MongoDB stores UTC (common), this should be okay. Convert to int after multiplying.
+            timestamp_ms = int(timestamp_val.timestamp() * 1000)
+            # Format as ISO 8601 string in UTC, appending 'Z'
+            timestamp_iso = datetime.utcfromtimestamp(timestamp_ms / 1000).isoformat() + "Z"
+        except Exception as e:
+            logging.warning(f"Could not process timestamp datetime object {timestamp_val}: {e}")
+            timestamp_ms = None # Ensure reset on error
+            timestamp_iso = "N/A" # Ensure reset on error
+    elif timestamp_val is not None:
+        # If timestamp exists but is not a datetime object (unexpected)
+        logging.warning(f"Timestamp field is not a datetime object: type={type(timestamp_val)}, value={timestamp_val}")
+        # Attempt to handle if it's the old structure (less likely now)
+        if isinstance(timestamp_val, dict):
+             try:
+                 ts_long = timestamp_val.get("$date", {}).get("$numberLong")
+                 if ts_long:
+                     timestamp_ms = int(ts_long)
+                     timestamp_iso = datetime.utcfromtimestamp(timestamp_ms / 1000).isoformat() + "Z"
+                 else:
+                     # Handle potential {'$date': date_string} format if needed
+                     pass # Add specific handling if other date formats might exist
+             except Exception as e:
+                  logging.warning(f"Could not parse dictionary timestamp {timestamp_val}: {e}")
+    # --- End Corrected Lines ---
 
     from_url = doc.get("fromUrl", "")
     from_title = doc.get("fromTitle", "")
