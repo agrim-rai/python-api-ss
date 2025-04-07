@@ -7,6 +7,20 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 
 
+def fetch_document_by_id(document_id):
+    # Connect to MongoDB
+    client = MongoClient("mongodb+srv://admin:7vNJvFHGPVvbWBRD@syntaxsentry.rddho.mongodb.net/?retryWrites=true&w=majority&appName=syntaxsentry")
+    db = client["test"]  # Select database 'test'
+    collection = db["activities"]  
+    
+    # Fetch document by _id
+    document = collection.find_one({"_id": ObjectId(document_id)})
+    
+    if document:
+        return document
+    else:
+        print("No document found with _id:", document_id)
+
 
 # --- Weights for Different Feature Types ---
 # Higher weights mean stronger indicators
