@@ -1,32 +1,9 @@
-# from fastapi import FastAPI
-# from pydantic import BaseModel
-# import subprocess
-
-# app = FastAPI()
-
-# # Define request model
-# class ScriptRequest(BaseModel):
-#     script_name: str
-
-# @app.post("/execute")
-# async def execute_code(request: ScriptRequest):
-#     if request.script_name not in ["paste.py", "copymain.py", "keymain.py"]:
-#         return {"error": "Invalid script name"}
-
-#     try:
-#         output = subprocess.run(
-#             ["python3", request.script_name], capture_output=True, text=True, timeout=10
-#         )
-#         return {"output": output.stdout, "error": output.stderr}
-#     except Exception as e:
-#         return {"error": str(e)}
-
-
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 import subprocess
 import json
+from checkcodetype import detect_language
+from checkcodetype import fetch_document_by_id
 
 app = FastAPI()
 
@@ -41,13 +18,48 @@ async def execute_code(request: ScriptRequest):
 
     try:
         # Pass object_id as an argument to the script
-        output = subprocess.run(
-            ["python3", request.script_name, request.object_id], 
-            capture_output=True, 
-            text=True, 
-            timeout=10
-        )
+        if(request.script_name in ["paste.py", "copymain.py", "keymain.py","tab.py"]):
+            output = subprocess.run(
+                ["python3", request.script_name, request.object_id], 
+                capture_output=True, 
+                text=True, 
+                timeout=10
+            )
+        else:
+            if(detect_language(fetch_document_by_id(request.object_id)['code']) == 'Java'):
+                output = subprocess.run(
+                    ["python3", 'java.py', request.object_id], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=10
+                )
+            elif(detect_language(fetch_document_by_id(request.object_id)['code']) == 'Python'):
+                output = subprocess.run(
+                    ["python3", 'py.py', request.object_id], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=10
+                )
+            elif(detect_language(fetch_document_by_id(request.object_id)['code']) == 'C++'):
+                output = subprocess.run(
+                    ["python3", 'cpp.py', request.object_id], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=10
+                )
+            elif(detect_language(fetch_document_by_id(request.object_id)['code']) == 'Javascript'):
+                output = subprocess.run(
+                    ["python3", 'javascript.py', request.object_id], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=10
+                )
+            else:
+                output.stdout = "could not find language amaong cpp,java,js,py"
+                output.stderr = "500"
 
+
+        
         stdout = output.stdout.strip()
         stderr = output.stderr.strip()
 
