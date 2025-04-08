@@ -5,21 +5,31 @@ from collections import Counter
 import sys
 from pymongo import MongoClient
 from bson.objectid import ObjectId
+import logging
 
+# Get logger from main application or create a new one if imported directly
+logger = logging.getLogger("py-api.checkcodetype")
 
 def fetch_document_by_id(document_id):
     # Connect to MongoDB
-    client = MongoClient("mongodb+srv://admin:7vNJvFHGPVvbWBRD@syntaxsentry.rddho.mongodb.net/?retryWrites=true&w=majority&appName=syntaxsentry")
-    db = client["test"]  # Select database 'test'
-    collection = db["activities"]  
-    
-    # Fetch document by _id
-    document = collection.find_one({"_id": ObjectId(document_id)})
-    
-    if document:
-        return document
-    else:
-        print("No document found with _id:", document_id)
+    try:
+        logger.info(f"Fetching document with ID: {document_id}")
+        client = MongoClient("mongodb+srv://admin:7vNJvFHGPVvbWBRD@syntaxsentry.rddho.mongodb.net/?retryWrites=true&w=majority&appName=syntaxsentry")
+        db = client["test"]  # Select database 'test'
+        collection = db["activities"]  
+        
+        # Fetch document by _id
+        document = collection.find_one({"_id": ObjectId(document_id)})
+        
+        if document:
+            logger.info(f"Document found for ID: {document_id}")
+            return document
+        else:
+            logger.warning(f"No document found with _id: {document_id}")
+            return None
+    except Exception as e:
+        logger.error(f"Error fetching document with ID {document_id}: {str(e)}")
+        return None
 
 
 # --- Weights for Different Feature Types ---
@@ -150,98 +160,118 @@ FEATURES = {
 
 def preprocess_code(code_snippet):
     """Remove comments and potentially normalize whitespace."""
-    # Remove multi-line /* ... */ comments
-    code = re.sub(r'/\*.*?\*/', '', code_snippet, flags=re.DOTALL)
-    # Remove single-line // comments
-    code = re.sub(r'//.*', '', code)
-    # Remove single-line # comments (mainly for Python)
-    code = re.sub(r'#.*', '', code)
-    # Optional: Collapse multiple spaces/tabs? For now, keep original spacing.
-    lines = [line.strip() for line in code.splitlines() if line.strip()]
-    return "\n".join(lines), lines # Return both processed string and list of lines
+    logger.debug("Preprocessing code snippet")
+    try:
+        # Remove multi-line /* ... */ comments
+        code = re.sub(r'/\*.*?\*/', '', code_snippet, flags=re.DOTALL)
+        # Remove single-line // comments
+        code = re.sub(r'//.*', '', code)
+        # Remove single-line # comments (mainly for Python)
+        code = re.sub(r'#.*', '', code)
+        # Optional: Collapse multiple spaces/tabs? For now, keep original spacing.
+        lines = [line.strip() for line in code.splitlines() if line.strip()]
+        logger.debug(f"Code preprocessing complete. Processed {len(lines)} lines")
+        return "\n".join(lines), lines # Return both processed string and list of lines
+    except Exception as e:
+        logger.error(f"Error during code preprocessing: {str(e)}")
+        return code_snippet, code_snippet.splitlines()
 
 def analyze_code(code_snippet):
     """Analyzes the code snippet and returns scores for each language."""
+    logger.info("Starting code analysis")
     scores = {'Python': 0, 'C++': 0, 'Java': 0, 'JavaScript': 0}
-    processed_code, lines = preprocess_code(code_snippet)
+    
+    try:
+        processed_code, lines = preprocess_code(code_snippet)
 
-    if not processed_code:
-        return scores # No code left after preprocessing
+        if not processed_code:
+            logger.warning("No code content after preprocessing")
+            return scores # No code left after preprocessing
 
-    total_lines = len(lines)
+        total_lines = len(lines)
 
-    # --- Feature Matching ---
-    for lang, patterns in FEATURES.items():
-        for pattern, weight in patterns:
-            try:
-                # Find all occurrences, not just the first one
-                matches = re.findall(pattern, processed_code, flags=re.MULTILINE)
-                if matches:
-                    # Score based on weight and frequency (log scale to avoid runaway scores)
-                    # Add 1 to count to handle log(0) and give base score
-                    scores[lang] += weight * (1 + math.log1p(len(matches)))
-            except re.error as e:
-                # print(f"Regex error for {lang} pattern '{pattern}': {e}") # Debugging
-                pass # Ignore regex errors for resilience
+        # --- Feature Matching ---
+        for lang, patterns in FEATURES.items():
+            lang_score = 0
+            for pattern, weight in patterns:
+                try:
+                    # Find all occurrences, not just the first one
+                    matches = re.findall(pattern, processed_code, flags=re.MULTILINE)
+                    if matches:
+                        # Score based on weight and frequency (log scale to avoid runaway scores)
+                        # Add 1 to count to handle log(0) and give base score
+                        pattern_score = weight * (1 + math.log1p(len(matches)))
+                        lang_score += pattern_score
+                        if len(matches) > 5:  # Only log significant matches
+                            logger.debug(f"Found {len(matches)} matches for {lang} pattern with weight {weight}")
+                except re.error as e:
+                    logger.warning(f"Regex error for {lang} pattern: {str(e)}")
+                    pass # Ignore regex errors for resilience
+            
+            scores[lang] += lang_score
+            logger.debug(f"{lang} initial score: {lang_score}")
 
-    # --- Structural Analysis ---
+        # --- Structural Analysis ---
 
-    # 1. Semicolon usage
-    semicolon_lines = sum(1 for line in lines if line.endswith(';'))
-    if total_lines > 0:
-        semicolon_ratio = semicolon_lines / total_lines
-        if semicolon_ratio > 0.7:  # High usage -> Java, C++ favoured
-            scores['Java'] += WEIGHTS['structure'] * 2
-            scores['C++'] += WEIGHTS['structure'] * 2
-            scores['JavaScript'] += WEIGHTS['structure'] * 0.5 # Less strict in JS
-            scores['Python'] -= WEIGHTS['structure'] # Penalize Python
-        elif semicolon_ratio < 0.1 and total_lines > 2: # Low usage -> Python favoured
-            scores['Python'] += WEIGHTS['structure'] * 2
-            scores['JavaScript'] += WEIGHTS['structure'] * 0.5 # JS can also have few
-            scores['Java'] -= WEIGHTS['structure']
-            scores['C++'] -= WEIGHTS['structure']
-        elif 0.2 < semicolon_ratio < 0.6: # Moderate usage -> JS slightly favoured
-             scores['JavaScript'] += WEIGHTS['structure']
+        # 1. Semicolon usage
+        semicolon_lines = sum(1 for line in lines if line.endswith(';'))
+        if total_lines > 0:
+            semicolon_ratio = semicolon_lines / total_lines
+            logger.debug(f"Semicolon ratio: {semicolon_ratio:.2f}")
+            if semicolon_ratio > 0.7:  # High usage -> Java, C++ favoured
+                scores['Java'] += WEIGHTS['structure'] * 2
+                scores['C++'] += WEIGHTS['structure'] * 2
+                scores['JavaScript'] += WEIGHTS['structure'] * 0.5 # Less strict in JS
+                scores['Python'] -= WEIGHTS['structure'] # Penalize Python
+            elif semicolon_ratio < 0.1 and total_lines > 2: # Low usage -> Python favoured
+                scores['Python'] += WEIGHTS['structure'] * 2
+                scores['JavaScript'] += WEIGHTS['structure'] * 0.5 # JS can also have few
+                scores['Java'] -= WEIGHTS['structure']
+                scores['C++'] -= WEIGHTS['structure']
 
-    # 2. Brace usage vs. Indentation (Heuristic)
-    brace_count = processed_code.count('{') + processed_code.count('}')
-    colon_at_eol_count = sum(1 for line in lines if line.endswith(':'))
-    indentation_changes = 0
-    last_indent = 0
-    for line in lines:
-        indent = len(line) - len(line.lstrip(' '))
-        if indent != last_indent:
-            indentation_changes +=1
-        last_indent = indent
+        # 2. Indentation vs. Braces
+        brace_count = processed_code.count('{') + processed_code.count('}')
+        colon_at_eol_count = sum(1 for line in lines if line.endswith(':'))
+        indentation_changes = 0
+        last_indent = 0
+        for line in lines:
+            indent = len(line) - len(line.lstrip(' '))
+            if indent != last_indent:
+                indentation_changes +=1
+            last_indent = indent
 
-    if brace_count > colon_at_eol_count + 2 and brace_count > total_lines * 0.1: # More braces than colons suggests C-style
-        scores['C++'] += WEIGHTS['structure']
-        scores['Java'] += WEIGHTS['structure']
-        scores['JavaScript'] += WEIGHTS['structure']
-        scores['Python'] -= WEIGHTS['structure'] * 0.5 # Less likely Python
-    elif colon_at_eol_count > brace_count + 1 and indentation_changes > total_lines * 0.2: # More colons and indentation changes suggest Python
-        scores['Python'] += WEIGHTS['structure'] * 1.5
-        scores['C++'] -= WEIGHTS['structure'] * 0.5
-        scores['Java'] -= WEIGHTS['structure'] * 0.5
-        scores['JavaScript'] -= WEIGHTS['structure'] * 0.5
+        if brace_count > colon_at_eol_count + 2 and brace_count > total_lines * 0.1: # More braces than colons suggests C-style
+            scores['C++'] += WEIGHTS['structure']
+            scores['Java'] += WEIGHTS['structure']
+            scores['JavaScript'] += WEIGHTS['structure']
+            scores['Python'] -= WEIGHTS['structure'] * 0.5 # Less likely Python
+        elif colon_at_eol_count > brace_count + 1 and indentation_changes > total_lines * 0.2: # More colons and indentation changes suggest Python
+            scores['Python'] += WEIGHTS['structure'] * 1.5
+            scores['C++'] -= WEIGHTS['structure'] * 0.5
+            scores['Java'] -= WEIGHTS['structure'] * 0.5
+            scores['JavaScript'] -= WEIGHTS['structure'] * 0.5
 
-    # Adjust for async/await ambiguity (common in both Py & JS)
-    # If both have high scores and async/await was found, look for other clues
-    if scores['Python'] > 0 and scores['JavaScript'] > 0 and \
-       (re.search(r'\b(async|await)\b', processed_code)):
-        if scores['Python'] > scores['JavaScript']:
-            if re.search(r'\b(def|self|elif|None|True|False)\b', processed_code):
-                scores['Python'] += WEIGHTS['unique_keyword'] # Boost Python if other Pythonic things exist
-            else:
-                 scores['JavaScript'] += WEIGHTS['common_keyword'] # Nudge JS otherwise
-        elif scores['JavaScript'] > scores['Python']:
-             if re.search(r'=>|\b(let|const|var|function|console|document)\b', processed_code):
-                 scores['JavaScript'] += WEIGHTS['unique_keyword'] # Boost JS
-             else:
-                 scores['Python'] += WEIGHTS['common_keyword'] # Nudge Python
+        # Adjust for async/await ambiguity (common in both Py & JS)
+        # If both have high scores and async/await was found, look for other clues
+        if scores['Python'] > 0 and scores['JavaScript'] > 0 and \
+           (re.search(r'\b(async|await)\b', processed_code)):
+            if scores['Python'] > scores['JavaScript']:
+                if re.search(r'\b(def|self|elif|None|True|False)\b', processed_code):
+                    scores['Python'] += WEIGHTS['unique_keyword'] # Boost Python if other Pythonic things exist
+                else:
+                     scores['JavaScript'] += WEIGHTS['common_keyword'] # Nudge JS otherwise
+            elif scores['JavaScript'] > scores['Python']:
+                 if re.search(r'=>|\b(let|const|var|function|console|document)\b', processed_code):
+                     scores['JavaScript'] += WEIGHTS['unique_keyword'] # Boost JS
+                 else:
+                     scores['Python'] += WEIGHTS['common_keyword'] # Nudge Python
 
-    return scores
-
+        logger.info(f"Analysis complete. Final scores: {scores}")
+        return scores
+        
+    except Exception as e:
+        logger.error(f"Error during code analysis: {str(e)}", exc_info=True)
+        return scores
 
 def detect_language(code_snippet):
     """
@@ -254,44 +284,33 @@ def detect_language(code_snippet):
         str: The name of the most likely language ('Python', 'C++', 'Java', 'JavaScript')
              or 'Undetermined' if insufficient evidence.
     """
-    if not isinstance(code_snippet, str) or not code_snippet.strip():
-        return "Undetermined (Empty or invalid input)"
-
-    scores = analyze_code(code_snippet)
-
-    # --- Final Decision ---
-    # Remove negative scores before calculating total
-    positive_scores = {lang: max(0, score) for lang, score in scores.items()}
-    total_score = sum(positive_scores.values())
-
-    # Define a minimum threshold for confidence
-    # Adjust this based on testing - depends on weights and snippet length
-    MIN_CONFIDENCE_THRESHOLD = 5.0
-
-    if total_score < MIN_CONFIDENCE_THRESHOLD:
-        # Low overall score might mean too short, too generic, or not one of the target languages
-        # Let's still try to make a best guess if there *is* a winner, unless score is REALLY low
-         if total_score < 2.0:
-              return "Undetermined (Insufficient evidence)"
-
-    # Find the language with the highest score
-    if not any(positive_scores.values()): # Check if all scores are zero or less
-         return "Undetermined (No features detected)"
-         
-    # Use max with a key to find the language name corresponding to the highest score
-    # Handles ties by returning the first one encountered in the dict's iteration order (consistent in Python 3.7+)
-    # or arbitrarily in older versions. If exact ties are problematic, more sophisticated tie-breaking needed.
-    best_match_lang = max(positive_scores, key=positive_scores.get)
-    
-    # Optional: Add percentage calculation for debugging or potential future use
-    # percentages = {lang: (score / total_score * 100) if total_score > 0 else 0 for lang, score in positive_scores.items()}
-    # print(f"Scores: {scores}") # Debugging
-    # print(f"Percentages: {percentages}") # Debugging
-
-    return best_match_lang
-
-
-
-
-
-
+    try:
+        if not code_snippet or len(code_snippet.strip()) < 10:
+            logger.warning("Code snippet too short for reliable detection")
+            return "Undetermined"
+            
+        logger.info("Starting language detection")
+        scores = analyze_code(code_snippet)
+        
+        # Find the language with the highest score
+        max_score = max(scores.values())
+        max_lang = max(scores, key=scores.get)
+        
+        # Require a minimum score to make a determination
+        # This helps avoid false positives on very short or ambiguous snippets
+        if max_score < 10:
+            logger.warning(f"Insufficient evidence for language detection. Max score: {max_score}")
+            return "Undetermined"
+            
+        # Check if the highest score is significantly higher than the second highest
+        sorted_scores = sorted(scores.values(), reverse=True)
+        if len(sorted_scores) > 1 and sorted_scores[0] < sorted_scores[1] * 1.2:
+            logger.warning(f"Language detection ambiguous. Top scores too close: {scores}")
+            # If scores are close, we might want to return "Ambiguous" or the top 2 candidates
+            # For now, we'll still return the top language but with a warning
+            
+        logger.info(f"Detected language: {max_lang} with score {max_score}")
+        return max_lang
+    except Exception as e:
+        logger.error(f"Error during language detection: {str(e)}", exc_info=True)
+        return "Undetermined"
