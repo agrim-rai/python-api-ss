@@ -748,7 +748,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if doc_content:
-        if doc_content.get("eventType") != "tab_switch":
+        if doc_content.get("eventType") not in ["tab_switch", "tab_deactivated", "tab_activated", "window_blurred","window_focused","url_change"]:
             print(json.dumps({"error": f"Document {document_id} is not a 'tab_switch' event (eventType: {doc_content.get('eventType')})"}))
             sys.exit(1)
 
