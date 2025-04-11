@@ -49,10 +49,12 @@ def store_ai_response(document_id, event_type, response_data, status="success"):
         
         # Prepare the document to insert
         response_doc = {
-            "documentId": document_id,
+            "documentId": ObjectId(document_id),  # Convert document_id to ObjectId
             "eventType": event_type,
             "response": response_data,
-            "status": status
+            "status": status,
+            "createdAt": datetime.utcnow(),  # Store createdAt timestamp
+            "__v": 0  # Explicitly setting __v to 0
         }
         
         # Insert the document
